@@ -1,4 +1,5 @@
 {
     "iis.configDir": "",
-    "C_Cpp.default.compilerPath": "cl.exe"
+    "C_Cpp.default.compilerPath": "cl.exe",
+    "cmake.sourceDirectory": "D:/workspace/Karten/server"
 }
