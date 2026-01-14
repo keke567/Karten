@@ -1,4 +1,3 @@
-# 绝对必须忽略的
 build/
 .vs/
 *.sln
@@ -9,3 +8,11 @@ build/
 *.pdb
 .vscode/
 third_party/asio/
+client/.venv/  
+server/__pycache__/   
+*.pyc
+*.pyo
+*.pyd
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
