@@ -1,0 +1,3 @@
+D:/workspace/Karten/server/build/CMakeFiles/SimpleServer.dir
+D:/workspace/Karten/server/build/CMakeFiles/edit_cache.dir
+D:/workspace/Karten/server/build/CMakeFiles/rebuild_cache.dir
