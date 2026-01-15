@@ -2,7 +2,6 @@ import pygame # 后续要拆分pygame导入
 import socket # 后续拆分socket导入
 import threading
 import sys
-from multipledispatch import dispatch
 from typing import Tuple, Any, overload
 from abc import ABC, abstractmethod
 # -*- encoding: utf-8 -*-
@@ -84,82 +83,31 @@ class InteractorAreaFactory(ABC):
     """
     基于pygame传统组件的自定义交互组件工厂抽象类
     """
+    def __init__(self):
+        pass
     @abstractmethod
-    def construct():...
+    def construct(self, *args, **kwargs):...
     
 class ButtonFactory(InteractorAreaFactory):
     """
     自定义组件Button的工厂类
     """
-    @overload
+    _instance = None
+    
+    def __new__(cls):
+        if not cls._instance:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+    
     def construct(self,
                   start_pos : Tuple[float, float],
                   size : Tuple[float, float],
-                  button_color : Tuple[int, int, int] = (255, 255, 255),
-                  border_color : Tuple[int, int, int] = (0, 0, 0)
-                  ) -> Button:...
-    
-    @overload
-    def construct(self, 
-                  start_pos : Tuple[float, float],
-                  size : Tuple[float, float],
+                  text : str = "",
                   button_color : Tuple[int, int, int] = (255, 255, 255), 
                   border_color : Tuple[int, int, int] = (0, 0, 0),
                   text_color : Tuple[int, int, int] = (0, 0, 0),
                   text_font : str|None = None,
                   text_size : int = 18,
-                  text : str = "",
-                  antialias : bool = True #启用字体平滑
-                  ) -> Button:...
-    
-    @dispatch(Tuple[float, float],
-              Tuple[float, float],
-              Tuple[int, int, int],
-              Tuple[int, int, int]
-              )
-    def construct(self,                                               # type: ignore
-                  start_pos : Tuple[float, float],
-                  size : Tuple[float, float],
-                  button_color : Tuple[int, int, int] = (255, 255, 255),
-                  border_color : Tuple[int, int, int] = (0, 0, 0)
-                  ) -> Button:
-        """
-        构建一个Button对象  
-        预处理相关零散数据，包装为Button初始化所需的参数
-        
-        :param start_pos: Button左上角像素坐标
-        :type start_pos: Tuple[float, float]
-        :param size: Button的长和宽
-        :type size: Tuple[float, float]
-        :param button_color: Button的颜色
-        :type button_color: Tuple[int, int, int]
-        :param border_color: Button边框颜色
-        :type border_color: Tuple[int, int, int]
-        :return: Button对象
-        :rtype: Button
-        """
-        button_rect = pygame.Rect(start_pos[0], start_pos[1], size[0], size[1])
-        return Button(button_rect, button_color, border_color, None)
-    
-    @dispatch(Tuple[float, float],
-              Tuple[float, float],
-              Tuple[int, int, int],
-              Tuple[int, int, int],
-              Tuple[int, int, int],
-              str|None,
-              int,
-              str,
-              bool
-              )
-    def construct(self,                                               # type: ignore
-                  start_pos : Tuple[float, float],
-                  size : Tuple[float, float],
-                  button_color : Tuple[int, int, int] = (255, 255, 255), 
-                  border_color : Tuple[int, int, int] = (0, 0, 0),
-                  text_color : Tuple[int, int, int] = (0, 0, 0),
-                  text_font : str|None = None,
-                  text_size : int = 18,
-                  text : str = "",
                   antialias : bool = True #启用字体平滑
                   ) -> Button:
         """
@@ -188,16 +136,20 @@ class ButtonFactory(InteractorAreaFactory):
         :rtype: Button
         """
         button_rect = pygame.Rect(start_pos[0], start_pos[1], size[0], size[1])
+        if text == None:
+            return Button(button_rect, button_color, border_color, None)
         text_obj = pygame.font.Font(text_font, text_size)
         button_text = text_obj.render(text, antialias, text_color)
         return Button(button_rect, button_color, border_color, button_text)
 
-
 def welcome_screen(surface: pygame.Surface):
     # 欢迎界面
     global RUNNING
+    button_factory = ButtonFactory()
+    start_button = button_factory.construct((20, 20), (100, 5))
+    start_button.run(surface)
     surface.fill((255, 255, 255))
-    
+
     pass
     
     
