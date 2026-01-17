@@ -81,9 +81,6 @@ class Board(DisplayArea):
         if self.border_width != 0:
             pygame.draw.rect(surface, self.border_color, self._frame, self.border_width)
             
-class Image(DisplayArea):
-    def __init__(self):pass
-    
 class Text(DisplayArea):
     """
     自定义组件Text类
@@ -184,10 +181,7 @@ class BoardFactory(DisplayAreaFactory):
         """
         board_rect = pygame.Rect(start_pos[0], start_pos[1], size[0], size[1])
         return Board(board_rect, color, apparency, border_width, border_color)
-
-class ImageFactory(DisplayAreaFactory):
-    pass
-
+        
 class TextFactory(DisplayAreaFactory):
     """
     自定义组件Text的工厂类
@@ -245,6 +239,8 @@ class InteractorArea(ABC):
     """
     UI交互控件抽象类
     """
+    _frame = None
+    _content = None
     _func = None
     
     @abstractmethod
@@ -318,11 +314,11 @@ class Button(InteractorArea):
         :param text: 按钮内文本对象(可设置为无)
         :type text: pygame.Surface | None
         """
-        self.rect = button_rect
+        self._frame = button_rect
         self.color = button_color
         self.border_width = border_width
         self.border_color = border_color
-        self.text = text
+        self._content = text
         self._func = lambda : print("clicked")
     
     def _events(self, event: pygame.event.Event):
@@ -333,7 +329,7 @@ class Button(InteractorArea):
         :type event: pygame.event
         """
         if event.type == pygame.MOUSEBUTTONDOWN:
-            if self.rect.collidepoint(event.pos):
+            if self._frame.collidepoint(event.pos):
                 self._func()
                 return 1
         return 0
@@ -345,15 +341,49 @@ class Button(InteractorArea):
         :param surface: pygame主窗口
         :type surface: pygame.Surface
         """
-        pygame.draw.rect(surface, self.color, self.rect)
+        pygame.draw.rect(surface, self.color, self._frame)
         if self.border_width != 0:
-            pygame.draw.rect(surface, self.border_color, self.rect, self.border_width)
-        if self.text != None:
-            surface.blit(self.text,
-                         (self.rect.centerx - self.text.get_width() // 2,
-                          self.rect.centery - self.text.get_height() // 2)
+            pygame.draw.rect(surface, self.border_color, self._frame, self.border_width)
+        if self._content != None:
+            surface.blit(self._content,
+                         (self._frame.centerx - self._content.get_width() // 2,
+                          self._frame.centery - self._content.get_height() // 2)
                          )
             
+class ImageObject(InteractorArea):
+    def __init__(self, 
+                 image : pygame.Surface
+                 ):
+        """ 待注明
+        __init__ 的 Docstring
+        
+        :param image: 说明
+        :type image: pygame.Surface
+        """
+        self._frame = image.get_rect()
+        self._content = image
+        self._func = lambda : print("clicked")
+        
+    def _events(self, event: pygame.event.Event):
+        """
+        从属于_handle，用于自定义对单一特定交互事件的处理
+        
+        :param event: 本次处理的事件
+        :type event: pygame.event
+        """
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            if self._frame.collidepoint(event.pos):
+                self._func()
+                return 1
+        return 0
+    
+    def _display(self, surface: pygame.Surface) -> None:
+        pygame.draw.rect(surface, (0, 0, 0), self._frame)
+        surface.blit(self._content,
+                     (self._frame.centerx - self._content.get_width() // 2,
+                      self._frame.centery - self._content.get_height() // 2)
+                     )
+        
 #---------------------------------------------------------------------------UI控件工厂------------------------------------------------------------------------------
 class InteractorAreaFactory(ABC):
     """
@@ -419,6 +449,28 @@ class ButtonFactory(InteractorAreaFactory):
         button_text = text_obj.render(text, antialias, text_color)
         return Button(button_rect, button_color, border_width, border_color, button_text)
 
+class ImageObjectFactory(InteractorAreaFactory):
+    """
+    自定义组件ImageObject的工厂类
+    """
+    def construct(self, 
+                  src : str,
+                  start_pos : Tuple[float, float]
+                  ) -> ImageObject:
+        """ 待注明
+        construct 的 Docstring
+        
+        :param src: 说明
+        :type src: str
+        :param start_pos: 说明
+        :type start_pos: Tuple[float, float]
+        :param size: 说明
+        :type size: Tuple[float, float]
+        :return: 说明
+        :rtype: ImageObject
+        """
+        image = pygame.image.load(src)
+        return ImageObject(image)
 #---------------------------------------------------------------------------UI界面设计------------------------------------------------------------------------------
 
 def welcome_screen(surface: pygame.Surface) -> None:
@@ -434,26 +486,24 @@ def welcome_screen(surface: pygame.Surface) -> None:
         """
         start_button绑定的方法
         """
-        UI_MAIN.switch_surface(waiting_screen)
+        UI_MAIN.switch_surfunc(waiting_screen)
+        # 待添加socket交互
+        pass
         
     WELCOME_BG = pygame.image.load("src\\bg\\welcome_bg.jpg")
-    BUTTONFACTORY = ButtonFactory()
-    TEXTFACTORY = TextFactory()
-    BOARDFACTORY = BoardFactory()
     
     surface.blit(WELCOME_BG, (0, 0))
     start_board = BOARDFACTORY.construct((360, 150), (560, 420), (255, 255, 255), apparency = 240, border_width = 0) 
     start_board.run(surface)
-
     
-    start_text = TEXTFACTORY.construct("斗地主", (400, 200), (480, 120), text_size = 70, bg_apparent = True, border_width = 0, text_font = "src\\fonts\\MicrosoftYaHei.ttf")
+    start_text = TEXTFACTORY.construct("斗地主", (400, 200), (480, 120), text_size = 70, bg_apparent = True, border_width = 0, text_font = "src\\fonts\\No.400-ShangShouZhaoPaiTi-2.ttf")
     start_text.run(surface)
     
     start_button = BUTTONFACTORY.construct((520, 360), (240, 60), "开始", border_width = 1, text_font = "src\\fonts\\MicrosoftYaHei.ttf")
     start_button.bind(start_buttons_job)
     start_button.run(surface)
-    
     # surface.fill((255, 255, 255))
+    
 def waiting_screen(surface : pygame.Surface):
     """
     等待连接界面
@@ -461,7 +511,26 @@ def waiting_screen(surface : pygame.Surface):
     :param surface: pygame主窗口
     :type surface: pygame.Surface
     """
-    pass
+    global UI_MAIN, RUNNING
+    def return_buttons_job():
+        """
+        return_button绑定的方法
+        """
+        UI_MAIN.switch_surfunc(welcome_screen)
+        
+    WELCOME_BG = pygame.image.load("src\\bg\\welcome_bg.jpg")
+    
+    surface.blit(WELCOME_BG, (0, 0))
+    waiting_board = BOARDFACTORY.construct((360, 150), (560, 420), (255, 255, 255), apparency = 240, border_width = 0) 
+    waiting_board.run(surface)
+    
+    waiting_text = TEXTFACTORY.construct("等待其他玩家...", (400, 200), (480, 120), text_size = 70, bg_apparent = True, border_width = 0, text_font = "src\\fonts\\MicrosoftYaHei.ttf")
+    waiting_text.run(surface)
+    
+    return_button = BUTTONFACTORY.construct((520, 360), (240, 60), "返回", border_width = 1, text_font = "src\\fonts\\MicrosoftYaHei.ttf")
+    return_button.bind(return_buttons_job)
+    return_button.run(surface)
+    
 
 def game_screen(surface: pygame.Surface):
     """
@@ -471,24 +540,24 @@ def game_screen(surface: pygame.Surface):
     :type surface: pygame.Surface
     """
     pass
+#---------------------------------------------------------------------------特殊类型UI------------------------------------------------------------------------------
+class Card(ImageObject):pass
 
+class CardFactory(ImageObjectFactory):pass
 
 #--------------------------------------------------------------------------客户端主程序-----------------------------------------------------------------------------
-ADDR = ("127.0.0.1", 8080)
+TESTADDR = ("127.0.0.1", 8080)
 WELCOMEFLAG = True
 GAMEFLAG = False
 RUNNING = True    # 程序运行标识
+BUTTONFACTORY = ButtonFactory()
+TEXTFACTORY = TextFactory()
+BOARDFACTORY = BoardFactory()
 
 class UIMain():
     """
     存有线程ui_thread负责的ui主程序，主管ui绘制
     """
-    _instance = None
-    
-    def __new__(cls, *args, **kwargs):
-        if not cls._instance:
-            cls._instance = super().__new__(cls)
-        return cls._instance
     
     def __init__(self, start_surfunc : Callable[[pygame.Surface], None]):
         """
@@ -499,7 +568,7 @@ class UIMain():
         """
         self._surfunc : Callable[[pygame.Surface], None] = start_surfunc
         
-    def switch_surface(self, new_surfunc : Callable[[pygame.Surface], None]) -> None:
+    def switch_surfunc(self, new_surfunc : Callable[[pygame.Surface], None]) -> None:
         """
         切换界面方法
         
@@ -564,8 +633,8 @@ class SocketMain():
     """
     线程socket_thread负责的socket主程序，负责与server交换数据
     """
-    def __init__(self): #初始化逻辑待完善
-        pass
+    def __init__(self, addr : Tuple[str, int]): #初始化逻辑待完善
+        self._ADDR = addr
     
     def _run(self) -> None:
         """
@@ -573,7 +642,7 @@ class SocketMain():
         
         """
         self.SK = socket.socket()
-        self.SK.connect(ADDR)
+        self.SK.connect(self._ADDR)
         # test start
         try :
             test_msg = "successful connnection!"
@@ -598,6 +667,7 @@ class SocketMain():
         """
         socket_thread = threading.Thread(target = self._run)
         socket_thread.start()
-    
+
+SOCKET_MAIN = SocketMain(TESTADDR)
 UI_MAIN = UIMain(welcome_screen)
 UI_MAIN.start()
