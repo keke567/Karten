@@ -1,10 +1,19 @@
-import pygame # 后续要拆分pygame导入
-import socket # 后续拆分socket导入
+import pygame
+import socket
 import threading
 import sys
 from typing import Tuple, Callable, Any
 from abc import ABC, abstractmethod
+import os
 # -*- encoding: utf-8 -*-
+# 用“待”标明TODO事项
+
+#-------------------------------------------------------------------------运行路径初始化----------------------------------------------------------------------------
+if getattr(sys, 'frozen', False):
+    application_path = os.path.dirname(sys.executable)
+else:
+    application_path = os.path.dirname(os.path.abspath(__file__))
+os.chdir(application_path)
 
 #-----------------------------------------------------------------------------UI组件--------------------------------------------------------------------------------
 class DisplayArea(ABC):
@@ -27,6 +36,54 @@ class DisplayArea(ABC):
         self._display(surface)
         pygame.display.flip()
     
+class Board(DisplayArea):
+    """
+    自定义Board类
+    """
+    def __init__(self,
+                 rect : pygame.Rect,
+                 color : Tuple[int, int, int],
+                 apparency : int,
+                 border_width : int,
+                 border_color : Tuple[int, int, int]
+                 ):
+        """
+        基于pygame.Rect的背景板组件
+        
+        :param rect: 组件框架
+        :type rect: pygame.Rect
+        :param color: 颜色
+        :type color: Tuple[int, int, int]
+        :param apparency: 透明度
+        :type apparency: int
+        :param border_width: 边框宽度
+        :type border_width: int
+        :param border_color: 边框颜色
+        :type border_color: Tuple[int, int, int]
+        """
+        self._frame = rect
+        self.color = color
+        self.apparency = apparency
+        self.border_width = border_width
+        self.border_color = border_color
+        
+    def _display(self, surface: pygame.Surface) -> None:
+        """
+        从属于self.run，用来显示背景板组件
+        
+        :param surface: pygame主窗口
+        :type surface: pygame.Surface
+        """
+        temp_surf = pygame.Surface((self._frame.width, self._frame.height), pygame.SRCALPHA)
+        r, g, b = self.color
+        temp_surf.fill((r, g, b, self.apparency))
+        surface.blit(temp_surf, self._frame.topleft)
+        if self.border_width != 0:
+            pygame.draw.rect(surface, self.border_color, self._frame, self.border_width)
+            
+class Image(DisplayArea):
+    def __init__(self):pass
+    
 class Text(DisplayArea):
     """
     自定义组件Text类
@@ -34,18 +91,43 @@ class Text(DisplayArea):
     def __init__(self, 
                  text : pygame.Surface, 
                  text_area : pygame.Rect, 
+                 bg_apparent : bool,
                  bg_color : Tuple[int, int, int],
                  border_width : int, 
                  border_color : Tuple[int, int, int]
                  ):
+        """
+        基于pygame.Rect与pygame.font.Font的文本显示组件
+        
+        :param text: 文本对象
+        :type text: pygame.Surface
+        :param text_area: 文本区域对象
+        :type text_area: pygame.Rect
+        :param bg_apparent: 背景透明化
+        :type bg_apparent: bool
+        :param bg_color: 背景颜色
+        :type bg_color: Tuple[int, int, int]
+        :param border_width: 文本边框宽度
+        :type border_width: int
+        :param border_color: 文本边框颜色
+        :type border_color: Tuple[int, int, int]
+        """
         self._content : pygame.Surface = text
         self._frame = text_area
+        self.bg_apparent = bg_apparent
         self.bg_color = bg_color
         self.border_width = border_width
         self.border_color = border_color
         
     def _display(self, surface: pygame.Surface) -> None:
-        pygame.draw.rect(surface, self.bg_color, self._frame)
+        """
+        从属于self.run，用来显示文本组件
+        
+        :param surface: pygame主窗口
+        :type surface: pygame.Surface
+        """
+        if not self.bg_apparent:
+            pygame.draw.rect(surface, self.bg_color, self._frame)
         if self.border_width != 0:
             pygame.draw.rect(surface, self.border_color, self._frame, self.border_width)
         surface.blit(self._content,
@@ -59,8 +141,49 @@ class DisplayAreaFactory(ABC):
     """
     基于pygame传统组件的自定义显示组件工厂抽象类
     """
+    _instance = None
+    
+    def __new__(cls, *args, **kwargs):
+        if not cls._instance:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+    
     @abstractmethod
     def construct(self, *args, **kwargs):...
+
+class BoardFactory(DisplayAreaFactory):
+    """
+    自定义组件Board的工厂类
+    """
+    def construct(self, 
+                  start_pos : Tuple[float, float],
+                  size : Tuple[float, float],
+                  color : Tuple[int, int, int],
+                  apparency : int = 256,
+                  border_width : int = 1,
+                  border_color : Tuple[int, int, int] = (0, 0, 0)
+                  ) -> Board:
+        """
+        构建一个Board对象  
+        预处理相关零散数据，包装为Board初始化所需的参数
+        
+        :param start_pos: Board左上角像素坐标
+        :type start_pos: Tuple[float, float]
+        :param size: Board的长和宽
+        :type size: Tuple[float, float]
+        :param color: Board颜色
+        :type color: Tuple[int, int, int]
+        :param apparency: Board透明度(0-256)
+        :type apparency: int
+        :param border_width: Board边框宽度
+        :type border_width: int
+        :param border_color: Board边框颜色
+        :type border_color: Tuple[int, int, int]
+        :return: Board对象
+        :rtype: Board
+        """
+        board_rect = pygame.Rect(start_pos[0], start_pos[1], size[0], size[1])
+        return Board(board_rect, color, apparency, border_width, border_color)
 
 class ImageFactory(DisplayAreaFactory):
     pass
@@ -69,13 +192,6 @@ class TextFactory(DisplayAreaFactory):
     """
     自定义组件Text的工厂类
     """
-    _instance = None
-    
-    def __new__(cls):
-        if not cls._instance:
-            cls._instance = super().__new__(cls)
-        return cls._instance
-    
     def construct(self,
                  text : str,
                  start_pos : Tuple[float, float], 
@@ -83,17 +199,45 @@ class TextFactory(DisplayAreaFactory):
                  text_font : str|None = None,
                  text_size : int = 18,
                  text_color : Tuple[int, int, int] = (0, 0, 0),
+                 bg_apparent : bool = False,
                  bg_color : Tuple[int, int, int] = (255, 255, 255),
                  border_width : int = 0,
                  border_color : Tuple[int, int, int] = (255, 255, 255),
-                 text_bold : bool = False,
-                 text_italic : bool = False,
                  antialias : bool = True #启用字体平滑     
                  ) -> Text:
+        """
+        构建一个Text对象  
+        预处理相关零散数据，包装为Text初始化所需的参数
+        
+        :param text: Text文本内容
+        :type text: str
+        :param start_pos: Text左上角像素坐标
+        :type start_pos: Tuple[float, float]
+        :param size: Text的长和宽
+        :type size: Tuple[float, float]
+        :param text_font: Text文本字体
+        :type text_font: str | None
+        :param text_size: Text文本大小
+        :type text_size: int
+        :param text_color: Text文本颜色
+        :type text_color: Tuple[int, int, int]
+        :param bg_apparent: Text背景透明化
+        :type bg_apparent: bool
+        :param bg_color: Text背景颜色
+        :type bg_color: Tuple[int, int, int]
+        :param border_width: Text边框宽度
+        :type border_width: int
+        :param border_color: Text边框颜色
+        :type border_color: Tuple[int, int, int]
+        :param antialias: Text文本字体平滑
+        :type antialias: bool
+        :return: Text对象
+        :rtype: Text
+        """
         text_rect = pygame.Rect(start_pos[0], start_pos[1], size[0], size[1])
-        text_obj = pygame.font.SysFont(text_font, text_size, bold=text_bold, italic=text_italic) # 采用系统字体，注意可能的兼容问题
+        text_obj = pygame.font.Font(text_font, text_size)
         text_surface = text_obj.render(text, antialias, text_color)
-        return Text(text_surface, text_rect, bg_color, border_width, border_color)
+        return Text(text_surface, text_rect, bg_apparent, bg_color, border_width, border_color)
         
 
 #-----------------------------------------------------------------------------UI控件--------------------------------------------------------------------------------
@@ -107,7 +251,7 @@ class InteractorArea(ABC):
     def _display(self, surface : pygame.Surface) -> None:...
     
     @abstractmethod
-    def _events(self, event : pygame.event) -> int:...
+    def _events(self, event : pygame.event.Event) -> int:...
     
     def _handle(self) -> int:
         """
@@ -171,7 +315,7 @@ class Button(InteractorArea):
         :type border_width: int,
         :param border_color: 按钮边框颜色RGB
         :type border_color: Tuple[int, int, int]
-        :param text: 按钮内文本(可设置为无)
+        :param text: 按钮内文本对象(可设置为无)
         :type text: pygame.Surface | None
         """
         self.rect = button_rect
@@ -181,7 +325,7 @@ class Button(InteractorArea):
         self.text = text
         self._func = lambda : print("clicked")
     
-    def _events(self, event: pygame.event):
+    def _events(self, event: pygame.event.Event):
         """
         从属于_handle，用于自定义对单一特定交互事件的处理
         
@@ -215,6 +359,13 @@ class InteractorAreaFactory(ABC):
     """
     基于pygame传统组件的自定义交互组件工厂抽象类
     """
+    _instance = None
+    
+    def __new__(cls, *args, **kwargs):
+        if not cls._instance:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+    
     @abstractmethod
     def construct(self, *args, **kwargs):...
     
@@ -222,13 +373,6 @@ class ButtonFactory(InteractorAreaFactory):
     """
     自定义组件Button的工厂类
     """
-    _instance = None
-    
-    def __new__(cls):
-        if not cls._instance:
-            cls._instance = super().__new__(cls)
-        return cls._instance
-    
     def construct(self,
                   start_pos : Tuple[float, float],
                   size : Tuple[float, float],
@@ -239,8 +383,6 @@ class ButtonFactory(InteractorAreaFactory):
                   text_color : Tuple[int, int, int] = (0, 0, 0),
                   text_font : str|None = None,
                   text_size : int = 18,
-                  text_bold : bool = False,
-                  text_italic : bool = False,
                   antialias : bool = True #启用字体平滑
                   ) -> Button:
         """
@@ -265,10 +407,6 @@ class ButtonFactory(InteractorAreaFactory):
         :type text_size: int
         :param text: Button文本内容
         :type text: str
-        :param text_bold: Button字体加粗
-        :type text_bold: bool
-        :param text_italic: Button字体斜体
-        :type text_italic: bool
         :param antialias: Button文本平滑
         :type antialias: bool
         :return: Button对象
@@ -277,72 +415,189 @@ class ButtonFactory(InteractorAreaFactory):
         button_rect = pygame.Rect(start_pos[0], start_pos[1], size[0], size[1])
         if text == None:
             return Button(button_rect, button_color, border_width, border_color, None)
-        text_obj = pygame.font.SysFont(text_font, text_size, bold=text_bold, italic=text_italic) # 采用系统字体，注意可能的兼容问题
+        text_obj = pygame.font.Font(text_font, text_size)
         button_text = text_obj.render(text, antialias, text_color)
         return Button(button_rect, button_color, border_width, border_color, button_text)
 
 #---------------------------------------------------------------------------UI界面设计------------------------------------------------------------------------------
 
-def welcome_screen(surface: pygame.Surface):
-    # 欢迎界面
-    global RUNNING
-    button_factory = ButtonFactory()
-    text_factory = TextFactory()
+def welcome_screen(surface: pygame.Surface) -> None:
+    """
+    欢迎界面
     
-    start_text = text_factory.construct("斗地主", (400, 200), (480, 120), border_width=1, text_font="Microsoft YaHei UI")
+    :param surface: pygame主窗口
+    :type surface: pygame.Surface
+    """
+    global RUNNING, UI_MAIN
+    
+    def start_buttons_job():
+        """
+        start_button绑定的方法
+        """
+        UI_MAIN.switch_surface(waiting_screen)
+        
+    WELCOME_BG = pygame.image.load("src\\bg\\welcome_bg.jpg")
+    BUTTONFACTORY = ButtonFactory()
+    TEXTFACTORY = TextFactory()
+    BOARDFACTORY = BoardFactory()
+    
+    surface.blit(WELCOME_BG, (0, 0))
+    start_board = BOARDFACTORY.construct((360, 150), (560, 420), (255, 255, 255), apparency = 240, border_width = 0) 
+    start_board.run(surface)
+
+    
+    start_text = TEXTFACTORY.construct("斗地主", (400, 200), (480, 120), text_size = 70, bg_apparent = True, border_width = 0, text_font = "src\\fonts\\MicrosoftYaHei.ttf")
     start_text.run(surface)
     
-    start_button = button_factory.construct((520, 330), (240, 60), "开始", border_width=1, text_font = "Microsoft YaHei UI")
-    start_button.bind(lambda : print("hello"))
+    start_button = BUTTONFACTORY.construct((520, 360), (240, 60), "开始", border_width = 1, text_font = "src\\fonts\\MicrosoftYaHei.ttf")
+    start_button.bind(start_buttons_job)
     start_button.run(surface)
-    surface.fill((255, 255, 255))
-
-def game_screen(surface: pygame.Surface):
-    # 游戏界面
+    
+    # surface.fill((255, 255, 255))
+def waiting_screen(surface : pygame.Surface):
+    """
+    等待连接界面
+    
+    :param surface: pygame主窗口
+    :type surface: pygame.Surface
+    """
     pass
 
+def game_screen(surface: pygame.Surface):
+    """
+    游戏界面
+    
+    :param surface: pygame主窗口
+    :type surface: pygame.Surface
+    """
+    pass
+
+
+#--------------------------------------------------------------------------客户端主程序-----------------------------------------------------------------------------
+ADDR = ("127.0.0.1", 8080)
 WELCOMEFLAG = True
 GAMEFLAG = False
 RUNNING = True    # 程序运行标识
-def main():
-    # 主程序
-    global RUNNING
-    
-    pygame.font.init()
-    pygame.init()
-    screen = pygame.display.set_mode((1280, 720))
-    pygame.display.set_caption("斗地主")
-    clock = pygame.time.Clock()
-    
-    try:
-        while RUNNING:
-            events = pygame.event.get()
-            for event in events:
-                if event.type == pygame.QUIT:
-                    RUNNING = False
-                elif event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_ESCAPE:
-                        RUNNING = False
-                # 可选：处理窗口大小变化等其他事件
-            
-            # 如果窗口被强制关闭（某些系统可能不发送QUIT事件）
-            if not pygame.display.get_init():
-                RUNNING = False
-            
-            screen.fill((255, 255, 255))            
-            pygame.display.flip()
-            
-            # ui 绘制 start
-            welcome_screen(screen)
-            # ui 绘制 end
-            clock.tick(60)
-            
-    except Exception as e:
-        print(f"程序异常: {e}")
-    finally:
-        # 确保资源被正确释放
-        pygame.quit()
-        sys.exit()
 
-if __name__ == "__main__":
-    main()
+class UIMain():
+    """
+    存有线程ui_thread负责的ui主程序，主管ui绘制
+    """
+    _instance = None
+    
+    def __new__(cls, *args, **kwargs):
+        if not cls._instance:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+    
+    def __init__(self, start_surfunc : Callable[[pygame.Surface], None]):
+        """
+        用一个界面方法初始化一个UIMain对象
+        
+        :param start_surfunc: 初始界面((pygame.Surface) -> None)
+        :type start_surfunc: Callable[[pygame.Surface], None]
+        """
+        self._surfunc : Callable[[pygame.Surface], None] = start_surfunc
+        
+    def switch_surface(self, new_surfunc : Callable[[pygame.Surface], None]) -> None:
+        """
+        切换界面方法
+        
+        :param new_surfunc: 新的界面((pygame.Surface) -> None)
+        :type new_surfunc: Callable[[pygame.Surface], None]
+        """
+        self._surfunc : Callable[[pygame.Surface], None] = new_surfunc
+        
+    def _run(self):
+        """
+        UIMain主要运行逻辑  
+        
+        """
+        global RUNNING
+        
+        pygame.font.init()
+        pygame.init()
+        screen = pygame.display.set_mode((1280, 720))
+        pygame.display.set_caption("斗地主")
+        clock = pygame.time.Clock()
+        
+        try:
+            while RUNNING:
+                events = pygame.event.get()
+                for event in events:
+                    if event.type == pygame.QUIT:
+                        RUNNING = False
+                    elif event.type == pygame.KEYDOWN:
+                        if event.key == pygame.K_ESCAPE:
+                            RUNNING = False
+                    # 可选：处理窗口大小变化等其他事件
+                
+                # 如果窗口被强制关闭（某些系统可能不发送QUIT事件）
+                if not pygame.display.get_init():
+                    RUNNING = False
+                
+                screen.fill((255, 255, 255))            
+                pygame.display.flip()
+                
+                # ui 绘制 start
+                self._surfunc(screen)
+                # ui 绘制 end
+                
+                clock.tick(120)
+                
+        except Exception as e:
+            print(f"程序异常: {e}")
+        finally:
+            # 确保资源被正确释放
+            pygame.quit()
+            sys.exit()
+    
+    def start(self):
+        """
+        将self._run交给单独的线程运行  
+        
+        """
+        ui_thread = threading.Thread(target = self._run)
+        ui_thread.start()
+
+class SocketMain():
+    """
+    线程socket_thread负责的socket主程序，负责与server交换数据
+    """
+    def __init__(self): #初始化逻辑待完善
+        pass
+    
+    def _run(self) -> None:
+        """
+        SocketMain主要运行逻辑  
+        
+        """
+        self.SK = socket.socket()
+        self.SK.connect(ADDR)
+        # test start
+        try :
+            test_msg = "successful connnection!"
+            self.SK.send(bytes(test_msg, encoding = 'utf-8')) #代码待测试
+        except BaseException:
+            print("test failure.")
+        # test end
+        """
+        try:
+            if self._activate:                       # 逻辑待完善
+                if self._activate == 1:
+                    cache = SK.
+        """
+    
+    def recv_msg(self) -> str:
+        return ""
+    
+    def start(self) -> None:
+        """
+        将self._run交给单独的线程运行  
+        
+        """
+        socket_thread = threading.Thread(target = self._run)
+        socket_thread.start()
+    
+UI_MAIN = UIMain(welcome_screen)
+UI_MAIN.start()
