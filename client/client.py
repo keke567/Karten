@@ -645,7 +645,7 @@ class SocketMain():
         self.SK.connect(self._ADDR)
         # test start
         try :
-            test_msg = "successful connnection!"
+            test_msg = "s"
             self.SK.send(bytes(test_msg, encoding = 'utf-8')) #代码待测试
         except BaseException:
             print("test failure.")
@@ -669,5 +669,6 @@ class SocketMain():
         socket_thread.start()
 
 SOCKET_MAIN = SocketMain(TESTADDR)
+SOCKET_MAIN.start()
 UI_MAIN = UIMain(welcome_screen)
 UI_MAIN.start()

@@ -9,6 +9,7 @@ build/
 .vscode/
 third_party/asio/
 client/.venv/  
+server/build/
 server/__pycache__/   
 *.pyc
 *.pyo
