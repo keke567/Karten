@@ -102,9 +102,9 @@ enum CardType
     STRAIGHT,      // 顺子 (5张或以上连续单牌)
     BOMB,          // 炸弹 (四张相同)
     ROCKET,        // 王炸 (大王+小王)
-    AIRPLANE,               
-    AIRPLANE_WITH_SINGLE,   
-    AIRPLANE_WITH_PAIR 
+    AIRPLANE,
+    AIRPLANE_WITH_SINGLE,
+    AIRPLANE_WITH_PAIR
 };
 /*
  * 1. 判断牌型是否合法
@@ -211,21 +211,21 @@ public:
                 }
                 return STRAIGHT;
             }
-             if(n==6&&sorted[0].value==sorted[1].value&&sorted[2].value==sorted[3].value&&sorted[4].value==sorted[6].value){
+            if (n == 6 && sorted[0].value == sorted[1].value && sorted[2].value == sorted[3].value && sorted[4].value == sorted[6].value)
+            {
                 return AIRPLANE;
             }
-            if((n==7&&sorted[0].value==sorted[1].value&&sorted[2].value==sorted[3].value&&sorted[4].value==sorted[5].value)||(
-                sorted[1].value==sorted[2].value&&sorted[3].value==sorted[4].value&&sorted[5].value==sorted[6].value
-            )){
+            if ((n == 7 && sorted[0].value == sorted[1].value && sorted[2].value == sorted[3].value && sorted[4].value == sorted[5].value) || (sorted[1].value == sorted[2].value && sorted[3].value == sorted[4].value && sorted[5].value == sorted[6].value))
+            {
                 return AIRPLANE_WITH_SINGLE;
             }
-             if(n==8&&sorted[0].value==sorted[1].value&&sorted[2].value==sorted[3].value&&sorted[4].value==sorted[5].value&&sorted[6].value==sorted[7].value){
+            if (n == 8 && sorted[0].value == sorted[1].value && sorted[2].value == sorted[3].value && sorted[4].value == sorted[5].value && sorted[6].value == sorted[7].value)
+            {
                 return AIRPLANE_WITH_SINGLE;
             }
             return INVALID_TYPE;
         }
-             return INVALID_TYPE;
-        
+        return INVALID_TYPE;
     }
     // 转化成字符串
     static string getTypeName(CardType type)
@@ -240,10 +240,9 @@ public:
             {STRAIGHT, "顺子"},
             {BOMB, "炸弹"},
             {ROCKET, "王炸"},
-             {AIRPLANE,"飞机"},
-            {AIRPLANE_WITH_SINGLE,"飞机带单"},
-             {AIRPLANE_WITH_PAIR,"飞机带双"}
-        };
+            {AIRPLANE, "飞机"},
+            {AIRPLANE_WITH_SINGLE, "飞机带单"},
+            {AIRPLANE_WITH_PAIR, "飞机带双"}};
         return (typeNames.count(type) ? typeNames.at(type) : "未知牌型");
     }
 
@@ -331,10 +330,11 @@ public:
             return sorted.back().weight;
         case ROCKET:
             return 100;
-          case AIRPLANE:
+        case AIRPLANE:
             return sorted[5].weight;
         case AIRPLANE_WITH_SINGLE:
-            if(sorted[0].value==sorted[1].value)return sorted.back().weight;
+            if (sorted[0].value == sorted[1].value)
+                return sorted.back().weight;
         case AIRPLANE_WITH_PAIR:
             return sorted.back().weight;
         default:
@@ -434,38 +434,72 @@ bool START = false;
  */
 class Session : public enable_shared_from_this<Session>
 {
+public:
+    // 接受数据回调函数组
+    using DataCallback = std::function<void(const std::string &, std::shared_ptr<Session>)>;
+    using ErrorCallback = std::function<void(const asio::error_code &)>;
+    void set_on_data(DataCallback callback);
+    void set_on_error(ErrorCallback callback);
+
+    Session(tcp::socket socket) : socket_(move(socket)) { do_read(); };
+    std::deque<std::string> write_queue_;
+    bool is_writing_ = False;
+    void Send(string &tag);
+    void Close(void);
+
 private:
+    DataCallback on_data_callback_;
+    ErrorCallback on_error_callback_;
     tcp::socket socket_;
     asio::streambuf buffer_;
-
-public:
-    Session(tcp::socket socket) : socket_(move(socket)) {};
-    void Recv(string &tag);
-    void Send(string tag);
-
-private:
-    void do_read(string &tag);
-    void on_read(const asio::error_code &error, size_t length, string &tag);
-    void do_write(string tag);
+    void do_read();
+    void on_read(const asio::error_code &error, size_t length);
+    void do_write();
     void on_write(const asio::error_code &error, size_t length);
+    void handle_write_error(const asio::error_code &error);
 };
 
 /**
- * 异步接受数据方法入口
+ * @brief 设置接受回调函数
+ * @details
+ * callback函数格式：
  *
- * @param tag 数据接受载体
+ * `void DataCallback(const std::string&, std::shared_ptr<Session>)`
+ * @param callback 用来处理数据的回调函数
  */
-void Session::Recv(string &tag)
+void Session::set_on_data(DataCallback callback)
 {
-    do_read(tag);
+    on_data_callback_ = std::move(callback);
 };
 
 /**
- * 异步
+ * @brief 设置发生错误时的回调函数
+ * @details
+ * callback函数格式：
+ *
+ * `void EeeoeCallback(const asio::error_code&)`
  */
-void Session::Send(string tag)
+void Session::set_on_error(ErrorCallback callback)
 {
-    do_write(tag);
+    on_error_callback_ = std::move(callback);
+};
+
+/**
+ * @brief 异步发送数据方法入口
+ * @details
+ * 将数据加入发送队列
+ *
+ * @param tag 要发送的数据
+ */
+void Session::Send(string &tag)
+{
+    bool write_in_progress = !write_queue_.empty();
+    write_queue_.push_back(tag + "\n");
+
+    if (!write_in_progress)
+    {
+        do_write();
+    }
 };
 
 /**
@@ -477,18 +511,44 @@ void Session::Send(string tag)
  *
  * @param tag 数据接受载体
  */
-void Session::do_read(string &tag)
+void Session::do_read()
 {
     async_read_until(socket_, buffer_, '\n',
-                     [self = weak_from_this(), &tag](const asio::error_code &error, size_t length)
+                     [self = weak_from_this()](const asio::error_code &error, size_t length)
                      {
                          auto shared_self = self.lock();
                          if (shared_self)
                          {
-                             shared_self->on_read(error, length, tag);
+                             shared_self->on_read(error, length);
                          }
                      });
-}
+};
+
+/**
+ * @brief 执行异步写操作
+ * @details
+ * 更改`is_writing_`的状态，并调用`on_write`执行下一步操作。
+ */
+void Session::do_write()
+{
+    if (write_queue_.empty())
+    {
+        is_writing_ = false;
+        return;
+    }
+
+    is_writing_ = true;
+    const std::string &data = write_queue_.front();
+
+    async_write(socket_, asio::buffer(data),
+                [self = weak_from_this()](const asio::error_code &error, size_t length)
+                {
+                    if (auto conn = self.lock())
+                    {
+                        conn->on_write(error, length);
+                    }
+                });
+};
 
 /**
  * @brief 从缓冲区读取到容器
@@ -499,24 +559,128 @@ void Session::do_read(string &tag)
  *
  * @param error 捕获的错误（如果发生错误）
  * @param length 数据长度
- * @param tag 数据接受容器
  */
-void Session::on_read(const asio::error_code &error, size_t length, string &tag)
+void Session::on_read(const asio::error_code &error, size_t length)
 {
     if (!error)
     {
         istream is(&buffer_);
+        string tag;
         getline(is, tag);
+
+        if (on_data_callback_)
+        {
+            on_data_callback_(tag, shared_from_this());
+        }
+
+        do_read();
     }
     else
     {
-        cout << "error at Session::on_read:" << error.message() << endl;
+        if (on_error_callback_)
+        {
+            on_error_callback_(error);
+        }
     }
 };
 
-// 服务器类
+/**
+ * @brief 写入完成回调
+ * @details
+ * + 将已发送的数据移除列表
+ * + 发生错误时调用`handle_write_error`处理错误
+ * + 更改`is_writing_`的状态
+ */
+void Session::on_write(const asio::error_code &error, size_t length)
+{
+    if (!error)
+    {
+        write_queue_.pop_front();
+
+        if (!write_queue_.empty())
+        {
+            do_write();
+        }
+        else
+        {
+            is_writing_ = False;
+        }
+    }
+    else
+    {
+        handle_write_error(error);
+
+        write_queue_.clear();
+        is_writing_ = False;
+    }
+};
+
+/**
+ * @brief 写入错误回调函数
+ *
+ * @param error 捕获到的错误对象
+ */
+void Session::handle_write_error(const asio::error_code &error)
+{
+    std::cout << "error at writing:" << error.message() << endl;
+    if (socket_.is_open())
+    {
+        Close();
+    }
+}
+
+/**
+ * @brief 关闭连接
+ * 
+ */
+void Session::Close(){
+    if(socket_.is_open()){
+        socket_.close();
+    }
+}
+/**
+ * @class Server
+ * @brief Session管理器，实现对不同连接的简单管理
+ * @details
+ * 
+ * 
+ * @author MyslZhao
+ */
 class Server
 {
+    public:
+    // 新连接回调函数
+    using NewConnectionCallback = std::function<void(std::shared_ptr<Session>)>;
+    // 关闭连接回调函数
+    using ConnectionClosedCallback = std::function<void(std::shared_ptr<Session>)>;
+
+    Server(asio::io_context& io_context, short port);
+
+    void set_on_new_connection(NewConnectionCallback callback);
+    void set_on_connection_closed(ConnectionClosedCallback callback);
+
+    size_t connection_count() const;
+
+    void close_all();
+
+    // 给所有连接发消息
+    void broadcast(const std::string& message);
+
+    // 向指定连接发消息
+    bool send_to(size_t index, const std::string& messgae);
+
+    private:
+    void do_accept();
+    void remove_connection(std::shared_ptr<Session> session);
+
+    asio::io_context& io_context_;
+    tcp::acceptor acceptor_;
+    std::vector<std::shared_ptr<Session>> connections_;
+
+    NewConnectionCallback on_new_connection_;
+    ConnectionClosedCallback on_connection_closed_;
+
+    static constexpr size_t MAX_CONNECTIONS = 3;
 };
 
 // ====================================================
