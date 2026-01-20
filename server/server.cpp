@@ -4,19 +4,41 @@
 #include <map>
 #include <algorithm>
 #include <random>
-#include <ctime>
 #include <chrono>
 #include <memory>
 #include <functional>
 #include <queue>
 #include <sstream>
 #include <atomic>
-#define ASIO_STANDALONE
-#define True true
-#define False false
-#include <asio.hpp>
-using asio::ip::tcp;
+#include <locale>
+#include <codecvt>
+#include <format>
+#include "manager.hpp"
 using namespace std;
+
+#define True true //pythonic ^_^
+#define False false
+vector<string> MSGQUEUE;
+/**
+ * @brief 用于解码消息的方法
+ * @details
+ * 利用`std::wstring_convert`与`std::codecvt_utf-8`来完成解码，得到`wstring`。  
+ * 
+ * 再通过`wcstombs`将`wstring`转为`string`。
+ * @param source 要转换的目标字符串
+ */
+std::string utf8_decode(const std::string& source)
+{
+    std::wstring cache = std::wstring_convert<std::codecvt_utf8<wchar_t>>().from_bytes(source);
+
+    size_t len = wcstombs(nullptr, cache.c_str(), 0) + 1;
+    char* buffer = new char[len];
+    wcstombs(buffer, cache.c_str(), len);
+    string str(buffer);
+    delete[] buffer;
+    return str;
+}
+
 //=============================================================
 // 基础数据结构
 //=============================================================
@@ -744,266 +766,6 @@ void setLandlord(int playerId){
 //============================================================
 
 bool START = false;
-
-/**
- * @class S/ession
- * @brief 异步服务器任务类
- * @details
- * 将连接封装成只有`Recv`与`Send`方法的对象，
- * 方便后续随调随用
- * @author MyslZhao
- */
-class Session : public enable_shared_from_this<Session>
-{
-public:
-    // 接受数据回调函数组
-    using DataCallback = std::function<void(const std::string &, std::shared_ptr<Session>)>;
-    using ErrorCallback = std::function<void(const asio::error_code &)>;
-    void set_on_data(DataCallback callback);
-    void set_on_error(ErrorCallback callback);
-
-    Session(tcp::socket socket) : socket_(move(socket)) { do_read(); };
-    std::deque<std::string> write_queue_;
-    bool is_writing_ = False;
-    void Send(string &tag);
-    void Close(void);
-
-private:
-    DataCallback on_data_callback_;
-    ErrorCallback on_error_callback_;
-    tcp::socket socket_;
-    asio::streambuf buffer_;
-    void do_read();
-    void on_read(const asio::error_code &error, size_t length);
-    void do_write();
-    void on_write(const asio::error_code &error, size_t length);
-    void handle_write_error(const asio::error_code &error);
-};
-
-/**
- * @brief 设置接受回调函数
- * @details
- * callback函数格式：
- *
- * `void DataCallback(const std::string&, std::shared_ptr<Session>)`
- * @param callback 用来处理数据的回调函数
- */
-void Session::set_on_data(DataCallback callback)
-{
-    on_data_callback_ = std::move(callback);
-};
-
-/**
- * @brief 设置发生错误时的回调函数
- * @details
- * callback函数格式：
- *
- * `void EeeoeCallback(const asio::error_code&)`
- */
-void Session::set_on_error(ErrorCallback callback)
-{
-    on_error_callback_ = std::move(callback);
-};
-
-/**
- * @brief 异步发送数据方法入口
- * @details
- * 将数据加入发送队列
- *
- * @param tag 要发送的数据
- */
-void Session::Send(string &tag)
-{
-    bool write_in_progress = !write_queue_.empty();
-    write_queue_.push_back(tag + "\n");
-
-    if (!write_in_progress)
-    {
-        do_write();
-    }
-};
-
-/**
- * @brief 异步接受数据（TCP阶段）
- * @details
- * 声明为`private`
- *
- * 由`Session::Recv`调用
- *
- * @param tag 数据接受载体
- */
-void Session::do_read()
-{
-    async_read_until(socket_, buffer_, '\n',
-                     [self = weak_from_this()](const asio::error_code &error, size_t length)
-                     {
-                         auto shared_self = self.lock();
-                         if (shared_self)
-                         {
-                             shared_self->on_read(error, length);
-                         }
-                     });
-};
-
-/**
- * @brief 执行异步写操作
- * @details
- * 更改`is_writing_`的状态，并调用`on_write`执行下一步操作。
- */
-void Session::do_write()
-{
-    if (write_queue_.empty())
-    {
-        is_writing_ = false;
-        return;
-    }
-
-    is_writing_ = true;
-    const std::string &data = write_queue_.front();
-
-    async_write(socket_, asio::buffer(data),
-                [self = weak_from_this()](const asio::error_code &error, size_t length)
-                {
-                    if (auto conn = self.lock())
-                    {
-                        conn->on_write(error, length);
-                    }
-                });
-};
-
-/**
- * @brief 从缓冲区读取到容器
- * @details
- * 声明为`private`
- *
- * 由`Session::do_read`调用
- *
- * @param error 捕获的错误（如果发生错误）
- * @param length 数据长度
- */
-void Session::on_read(const asio::error_code &error, size_t length)
-{
-    if (!error)
-    {
-        istream is(&buffer_);
-        string tag;
-        getline(is, tag);
-
-        if (on_data_callback_)
-        {
-            on_data_callback_(tag, shared_from_this());
-        }
-
-        do_read();
-    }
-    else
-    {
-        if (on_error_callback_)
-        {
-            on_error_callback_(error);
-        }
-    }
-};
-
-/**
- * @brief 写入完成回调
- * @details
- * + 将已发送的数据移除列表
- * + 发生错误时调用`handle_write_error`处理错误
- * + 更改`is_writing_`的状态
- */
-void Session::on_write(const asio::error_code &error, size_t length)
-{
-    if (!error)
-    {
-        write_queue_.pop_front();
-
-        if (!write_queue_.empty())
-        {
-            do_write();
-        }
-        else
-        {
-            is_writing_ = False;
-        }
-    }
-    else
-    {
-        handle_write_error(error);
-
-        write_queue_.clear();
-        is_writing_ = False;
-    }
-};
-
-/**
- * @brief 写入错误回调函数
- *
- * @param error 捕获到的错误对象
- */
-void Session::handle_write_error(const asio::error_code &error)
-{
-    std::cout << "error at writing:" << error.message() << endl;
-    if (socket_.is_open())
-    {
-        Close();
-    }
-}
-
-/**
- * @brief 关闭连接
- * 
- */
-void Session::Close(){
-    if(socket_.is_open()){
-        socket_.close();
-    }
-}
-/**
- * @class Server
- * @brief Session管理器，实现对不同连接的简单管理
- * @details
- * 
- * 
- * @author MyslZhao
- */
-class Server
-{
-    public:
-    // 新连接回调函数
-    using NewConnectionCallback = std::function<void(std::shared_ptr<Session>)>;
-    // 关闭连接回调函数
-    using ConnectionClosedCallback = std::function<void(std::shared_ptr<Session>)>;
-
-    Server(asio::io_context& io_context, short port);
-
-    void set_on_new_connection(NewConnectionCallback callback);
-    void set_on_connection_closed(ConnectionClosedCallback callback);
-
-    size_t connection_count() const;
-
-    void close_all();
-
-    // 给所有连接发消息
-    void broadcast(const std::string& message);
-
-    // 向指定连接发消息
-    bool send_to(size_t index, const std::string& messgae);
-
-    private:
-    void do_accept();
-    void remove_connection(std::shared_ptr<Session> session);
-
-    asio::io_context& io_context_;
-    tcp::acceptor acceptor_;
-    std::vector<std::shared_ptr<Session>> connections_;
-
-    NewConnectionCallback on_new_connection_;
-    ConnectionClosedCallback on_connection_closed_;
-
-    static constexpr size_t MAX_CONNECTIONS = 3;
-};
-
 // ====================================================
 // 第四部分：主函数
 // ====================================================
@@ -1069,8 +831,9 @@ void testGameLogic()
 // 回huan地址127.0.0.1  8080  utf8编码
 int main()
 {
+    // test start
+    /**
     showWelcome();
-    
     int choice;
     short port = 8080;
     unique_ptr<asio::io_context> io_context;
@@ -1250,5 +1013,7 @@ int main()
         }
         
     } while (choice != 0);
+     */
+    //test end
     return 0;
 };
