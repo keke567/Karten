@@ -1,15 +1,7 @@
-build/
 .vs/
-*.sln
-*.vcxproj
-*.vcxproj.user
-*.exe
-*.obj
-*.pdb
 .vscode/
-third_party/asio/
 client/.venv/  
-server/build/
+server/.venv/
 server/__pycache__/   
 *.pyc
 *.pyo
