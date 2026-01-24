@@ -7,6 +7,7 @@ from abc import ABC, abstractmethod
 import os
 # -*- encoding: utf-8 -*-
 # 用“待”标明TODO事项
+CARD_QUEUE = []
 
 #-------------------------------------------------------------------------运行路径初始化----------------------------------------------------------------------------
 if getattr(sys, 'frozen', False):
@@ -546,7 +547,7 @@ class Card(ImageObject):pass
 class CardFactory(ImageObjectFactory):pass
 
 #--------------------------------------------------------------------------客户端主程序-----------------------------------------------------------------------------
-TESTADDR = ("127.0.0.1", 8080)
+TESTADDR = ("127.0.0.1", 8888)
 WELCOMEFLAG = True
 GAMEFLAG = False
 RUNNING = True    # 程序运行标识
@@ -626,7 +627,7 @@ class UIMain():
         将self._run交给单独的线程运行  
         
         """
-        ui_thread = threading.Thread(target = self._run)
+        ui_thread = threading.Thread(target = self._run, name = "UI thread")
         ui_thread.start()
 
 class SocketMain():
@@ -635,39 +636,49 @@ class SocketMain():
     """
     def __init__(self, addr : Tuple[str, int]): #初始化逻辑待完善
         self._ADDR = addr
+        self._listenmsg = []
+        self._sendmsg = []
+        self._flag = 0
     
-    def _run(self) -> None:
-        """
-        SocketMain主要运行逻辑  
+    def _send(self) -> None:
+        while True:
+            try:
+                if self._sendmsg == []:continue
+                if self._flag:break
+                self._socket.sendall(self._sendmsg.pop(0).encode("utf-8"))
+            except BaseException:
+                self._flag = 1
+                continue
+    
+    def _listen(self) -> None:
+        while True:
+            if self._flag:
+                break
+            cache = self._socket.recv(2048).decode("utf-8")
+            if cache != None:
+                self._listenmsg.append(cache)
+    
+    def recv(self) -> str:
+        if self._listenmsg == []:
+            return ""
+        return self._listenmsg.pop(0)
         
-        """
-        self.SK = socket.socket()
-        self.SK.connect(self._ADDR)
-        # test start
-        try :
-            test_msg = "s"
-            self.SK.send(bytes(test_msg, encoding = 'utf-8')) #代码待测试
-        except BaseException:
-            print("test failure.")
-        # test end
-        """
-        try:
-            if self._activate:                       # 逻辑待完善
-                if self._activate == 1:
-                    cache = SK.
-        """
-    
-    def recv_msg(self) -> str:
-        return ""
-    
+    def send(self, msg : str) -> None:
+        self._sendmsg.append(msg)
+        
     def start(self) -> None:
         """
         将self._run交给单独的线程运行  
         
         """
-        socket_thread = threading.Thread(target = self._run)
-        socket_thread.start()
-
+        self._socket = socket.socket()
+        self._socket.connect(self._ADDR)
+        
+        listen_thread = threading.Thread(target = self._listen, name = "listen thread")
+        send_thread = threading.Thread(target = self._send, name = "send thread")
+        listen_thread.start()
+        send_thread.start()
+        
 SOCKET_MAIN = SocketMain(TESTADDR)
 SOCKET_MAIN.start()
 UI_MAIN = UIMain(welcome_screen)
