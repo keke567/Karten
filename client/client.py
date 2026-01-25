@@ -277,7 +277,7 @@ class InteractorArea(ABC):
         self._display(surface)
         pygame.display.flip()
         if self._handle() == -1:
-            RUNNING = 0
+            RUNNING = False
             
     def bind(self, job : Callable[[], None]) -> None:
         """
@@ -551,6 +551,7 @@ TESTADDR = ("127.0.0.1", 8888)
 WELCOMEFLAG = True
 GAMEFLAG = False
 RUNNING = True    # 程序运行标识
+SOCKETRUNNING = True
 BUTTONFACTORY = ButtonFactory()
 TEXTFACTORY = TextFactory()
 BOARDFACTORY = BoardFactory()
@@ -620,7 +621,6 @@ class UIMain():
         finally:
             # 确保资源被正确释放
             pygame.quit()
-            sys.exit()
     
     def start(self):
         """
@@ -639,24 +639,33 @@ class SocketMain():
         self._listenmsg = []
         self._sendmsg = []
         self._flag = 0
+        self._listenflag = 1
+        self._sendflag = 1
     
     def _send(self) -> None:
         while True:
             try:
+                if self._flag:break
                 if self._sendmsg == []:continue
                 if self._flag:break
+                if not RUNNING:self._flag = 1
                 self._socket.sendall(self._sendmsg.pop(0).encode("utf-8"))
             except BaseException:
                 self._flag = 1
                 continue
+        self._sendflag = 0
     
     def _listen(self) -> None:
         while True:
-            if self._flag:
-                break
-            cache = self._socket.recv(2048).decode("utf-8")
-            if cache != None:
-                self._listenmsg.append(cache)
+            try:
+                if self._flag:break
+                cache = self._socket.recv(2048).decode("utf-8")
+                if cache != None:
+                    self._listenmsg.append(cache)
+            except BaseException:
+                self._flag = 1
+                continue
+        self._listenflag = 0
     
     def recv(self) -> str:
         if self._listenmsg == []:
@@ -676,10 +685,28 @@ class SocketMain():
         
         listen_thread = threading.Thread(target = self._listen, name = "listen thread")
         send_thread = threading.Thread(target = self._send, name = "send thread")
+        lifemanager_thread = threading.Thread(target = self.isalive, name = "life_manager")
         listen_thread.start()
         send_thread.start()
+        lifemanager_thread.start()
+        
+    def isalive(self):
+        global RUNNING, SOCKETRUNNING
+        while True:
+            if not RUNNING:
+                self._flag = 1
+                break
+        while True:
+            if not self._sendflag:
+                SOCKETRUNNING = False
+                self._socket.close()
+                break
         
 SOCKET_MAIN = SocketMain(TESTADDR)
 SOCKET_MAIN.start()
 UI_MAIN = UIMain(welcome_screen)
 UI_MAIN.start()
+
+while True:
+    if not RUNNING and not SOCKETRUNNING:
+        break
